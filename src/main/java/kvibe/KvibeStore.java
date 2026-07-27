@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import kvibe.format.FileHeader;
 import kvibe.format.RecordCodec;
 import kvibe.recovery.Recovery;
@@ -19,9 +20,15 @@ import kvibe.recovery.RecoveryResult;
 /**
  * {@link KeyValueStore} on top of a single append-only data file (REQUIREMENTS.md, sections 5-6).
  *
- * <p>This stage does not yet serialize concurrent writers with a {@code ReentrantLock} (5.1) — the
- * writer-serializing lock lands with the concurrency model. Until then, a {@code KvibeStore} must
- * be used from a single thread at a time.
+ * <p>Writers ({@link #put}, {@link #delete}, {@link #close}) are serialized by a single {@link
+ * ReentrantLock} (5.1). Readers ({@link #get}, {@link #size}) never take it: they read
+ * positionally and rely on the invariant that a {@link Loc} is only published to the keydir after
+ * its bytes are fully written and, per {@link SyncPolicy}, forced (5.2, 5.3) — so a reader that
+ * observes a {@code Loc} is guaranteed to observe the bytes it points at too.
+ *
+ * <p>Closing the store does not wait for concurrent {@code get}/{@code size} calls in flight on
+ * other threads; interrupting a thread blocked in a channel read closes the channel for every
+ * thread using this store (5.4) — both are documented limitations, not bugs.
  */
 public final class KvibeStore implements KeyValueStore {
 
@@ -31,8 +38,13 @@ public final class KvibeStore implements KeyValueStore {
     private final FileLock lock;
     private final StoreConfig config;
     private final ConcurrentHashMap<Key, Loc> keydir;
+    private final ReentrantLock writeLock = new ReentrantLock();
     private long tail;
-    private boolean closed;
+
+    // Read lock-free by get()/size() on other threads, so it must be volatile for visibility.
+    private volatile boolean closed;
+
+    // Only ever read/written while holding writeLock (inside put/delete), so plain is enough.
     private boolean poisoned;
 
     private KvibeStore(
@@ -129,24 +141,29 @@ public final class KvibeStore implements KeyValueStore {
 
     @Override
     public void put(byte[] key, byte[] value) throws IOException {
-        ensureWritable();
-        ByteBuffer record = RecordCodec.encode(System.currentTimeMillis(), false, key, value);
-        int recordLength = record.remaining();
-
-        long writeAt = tail;
+        writeLock.lock();
         try {
-            writeFully(channel, record, writeAt);
-            if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
-                channel.force(false);
-            }
-        } catch (IOException e) {
-            poisoned = true;
-            throw e;
-        }
+            ensureWritable();
+            ByteBuffer record = RecordCodec.encode(System.currentTimeMillis(), false, key, value);
+            int recordLength = record.remaining();
 
-        long valueOffset = writeAt + RecordCodec.valueOffsetInRecord(key.length);
-        keydir.put(Key.of(key), new Loc(valueOffset, value.length));
-        tail = writeAt + recordLength;
+            long writeAt = tail;
+            try {
+                writeFully(channel, record, writeAt);
+                if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
+                    channel.force(false);
+                }
+            } catch (IOException e) {
+                poisoned = true;
+                throw e;
+            }
+
+            long valueOffset = writeAt + RecordCodec.valueOffsetInRecord(key.length);
+            keydir.put(Key.of(key), new Loc(valueOffset, value.length));
+            tail = writeAt + recordLength;
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     @Override
@@ -171,29 +188,34 @@ public final class KvibeStore implements KeyValueStore {
 
     @Override
     public boolean delete(byte[] key) throws IOException {
-        ensureWritable();
-        Key k = Key.of(key);
-        if (!keydir.containsKey(k)) {
-            return false;
-        }
-
-        ByteBuffer record = RecordCodec.encode(System.currentTimeMillis(), true, key, new byte[0]);
-        int recordLength = record.remaining();
-
-        long writeAt = tail;
+        writeLock.lock();
         try {
-            writeFully(channel, record, writeAt);
-            if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
-                channel.force(false);
+            ensureWritable();
+            Key k = Key.of(key);
+            if (!keydir.containsKey(k)) {
+                return false;
             }
-        } catch (IOException e) {
-            poisoned = true;
-            throw e;
-        }
 
-        keydir.remove(k);
-        tail = writeAt + recordLength;
-        return true;
+            ByteBuffer record = RecordCodec.encode(System.currentTimeMillis(), true, key, new byte[0]);
+            int recordLength = record.remaining();
+
+            long writeAt = tail;
+            try {
+                writeFully(channel, record, writeAt);
+                if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
+                    channel.force(false);
+                }
+            } catch (IOException e) {
+                poisoned = true;
+                throw e;
+            }
+
+            keydir.remove(k);
+            tail = writeAt + recordLength;
+            return true;
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     @Override
@@ -204,10 +226,15 @@ public final class KvibeStore implements KeyValueStore {
 
     @Override
     public void close() throws IOException {
-        if (closed) {
-            return;
+        writeLock.lock();
+        try {
+            if (closed) {
+                return;
+            }
+            closed = true;
+        } finally {
+            writeLock.unlock();
         }
-        closed = true;
         try {
             lock.release();
         } finally {

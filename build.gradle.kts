@@ -34,6 +34,8 @@ tasks.test {
 val slowTest by tasks.registering(Test::class) {
     group = "verification"
     description = "Runs crash and long-running concurrency tests tagged 'slow'."
+    testClassesDirs = tasks.test.get().testClassesDirs
+    classpath = tasks.test.get().classpath
     useJUnitPlatform {
         includeTags("slow")
     }
