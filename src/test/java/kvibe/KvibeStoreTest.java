@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -155,5 +156,62 @@ class KvibeStoreTest {
             assertThat(reopened.size()).isEqualTo(1);
         }
         assertThat(java.nio.file.Files.size(path)).isEqualTo(validSize);
+    }
+
+    @Test
+    void openingAnAlreadyOpenFileFailsClearlyAndTheLockIsReleasedOnClose() throws IOException {
+        Path path = storePath();
+        try (KvibeStore first = KvibeStore.open(path, StoreConfig.defaults())) {
+            assertThatThrownBy(() -> KvibeStore.open(path, StoreConfig.defaults()))
+                    .isInstanceOf(StoreAlreadyOpenException.class);
+        }
+
+        // first's lock was released by close(); a second open() now succeeds.
+        try (KvibeStore reopened = KvibeStore.open(path, StoreConfig.defaults())) {
+            assertThat(reopened.size()).isZero();
+        }
+    }
+
+    @Test
+    void neverSyncPolicyStillAllowsReadingBackAPutValue() throws IOException {
+        try (KvibeStore store = KvibeStore.open(storePath(), new StoreConfig(SyncPolicy.NEVER))) {
+            store.put(bytes("k"), bytes("v"));
+            assertThat(store.get(bytes("k"))).isEqualTo(bytes("v"));
+        }
+    }
+
+    @Test
+    void aWriteFailurePoisonsTheStoreAndRejectsFurtherMutations() throws Exception {
+        KvibeStore store = KvibeStore.open(storePath(), StoreConfig.defaults());
+        store.put(bytes("a"), bytes("1"));
+
+        // Simulate an unrecoverable write failure (e.g. a disk error) by breaking the channel
+        // out from under the store, bypassing KvibeStore.close() so its own state is untouched.
+        Field channelField = KvibeStore.class.getDeclaredField("channel");
+        channelField.setAccessible(true);
+        ((FileChannel) channelField.get(store)).close();
+
+        assertThatThrownBy(() -> store.put(bytes("b"), bytes("2"))).isInstanceOf(IOException.class);
+
+        assertThatThrownBy(() -> store.put(bytes("c"), bytes("3"))).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> store.delete(bytes("a"))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void poisonedStoreStillAllowsReadsOfPreviouslyCommittedData() throws Exception {
+        try (KvibeStore store = KvibeStore.open(storePath(), StoreConfig.defaults())) {
+            store.put(bytes("a"), bytes("1"));
+
+            // Flip the poisoned flag directly, without touching the channel, to isolate the
+            // "reads still work" claim from whether the underlying I/O itself still succeeds.
+            Field poisonedField = KvibeStore.class.getDeclaredField("poisoned");
+            poisonedField.setAccessible(true);
+            poisonedField.set(store, true);
+
+            assertThat(store.get(bytes("a"))).isEqualTo(bytes("1"));
+            assertThat(store.size()).isEqualTo(1);
+            assertThatThrownBy(() -> store.put(bytes("b"), bytes("2"))).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> store.delete(bytes("a"))).isInstanceOf(IllegalStateException.class);
+        }
     }
 }

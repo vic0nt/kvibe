@@ -5,6 +5,8 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
@@ -17,23 +19,26 @@ import kvibe.recovery.RecoveryResult;
 /**
  * {@link KeyValueStore} on top of a single append-only data file (REQUIREMENTS.md, sections 5-6).
  *
- * <p>This stage does not yet acquire a {@code FileLock} (FR-8) or enter a poisoned state after an
- * unrecoverable write failure (NFR-7) — both are deferred. Concurrent use from multiple threads
- * is not yet safe: the writer-serializing lock (5.1) lands with the concurrency model. Until then,
- * a {@code KvibeStore} must be used from a single thread at a time.
+ * <p>This stage does not yet serialize concurrent writers with a {@code ReentrantLock} (5.1) — the
+ * writer-serializing lock lands with the concurrency model. Until then, a {@code KvibeStore} must
+ * be used from a single thread at a time.
  */
 public final class KvibeStore implements KeyValueStore {
 
     private static final Logger LOG = System.getLogger(KvibeStore.class.getName());
 
     private final FileChannel channel;
+    private final FileLock lock;
     private final StoreConfig config;
     private final ConcurrentHashMap<Key, Loc> keydir;
     private long tail;
     private boolean closed;
+    private boolean poisoned;
 
-    private KvibeStore(FileChannel channel, StoreConfig config, ConcurrentHashMap<Key, Loc> keydir, long tail) {
+    private KvibeStore(
+            FileChannel channel, FileLock lock, StoreConfig config, ConcurrentHashMap<Key, Loc> keydir, long tail) {
         this.channel = channel;
+        this.lock = lock;
         this.config = config;
         this.keydir = keydir;
         this.tail = tail;
@@ -43,6 +48,8 @@ public final class KvibeStore implements KeyValueStore {
      * Opens {@code path}, creating it (with a fresh header) if it doesn't exist, or replaying it
      * to rebuild the keydir otherwise (FR-3).
      *
+     * @throws StoreAlreadyOpenException if the file is already locked by another open {@code
+     *     KvibeStore}, in this process or another (FR-8)
      * @throws kvibe.format.UnsupportedFormatException if the file's magic or format version is
      *     not recognized (FR-9)
      */
@@ -52,51 +59,89 @@ public final class KvibeStore implements KeyValueStore {
 
         FileChannel channel =
                 FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
+        FileLock lock = lockOrClose(channel, path);
 
-        ConcurrentHashMap<Key, Loc> keydir = new ConcurrentHashMap<>();
-        long tail;
-        if (channel.size() == 0) {
-            ByteBuffer header = FileHeader.current().encode();
-            writeFully(channel, header, 0);
-            if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
-                channel.force(false);
+        try {
+            ConcurrentHashMap<Key, Loc> keydir = new ConcurrentHashMap<>();
+            long tail;
+            if (channel.size() == 0) {
+                ByteBuffer header = FileHeader.current().encode();
+                writeFully(channel, header, 0);
+                if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
+                    channel.force(false);
+                }
+                tail = FileHeader.SIZE;
+            } else {
+                ByteBuffer header = ByteBuffer.allocate(FileHeader.SIZE);
+                readFully(channel, header, 0);
+                header.flip();
+                FileHeader.decode(header);
+
+                RecoveryResult recovered = Recovery.scan(channel, FileHeader.SIZE);
+                keydir.putAll(recovered.keydir());
+                tail = recovered.validTailOffset();
+
+                long danglingBytes = channel.size() - tail;
+                if (danglingBytes > 0) {
+                    channel.truncate(tail);
+                    LOG.log(
+                            Level.INFO,
+                            "truncated {0} dangling byte(s) of a torn/corrupt record in {1}",
+                            danglingBytes,
+                            path);
+                }
             }
-            tail = FileHeader.SIZE;
-        } else {
-            ByteBuffer header = ByteBuffer.allocate(FileHeader.SIZE);
-            readFully(channel, header, 0);
-            header.flip();
-            FileHeader.decode(header);
 
-            RecoveryResult recovered = Recovery.scan(channel, FileHeader.SIZE);
-            keydir.putAll(recovered.keydir());
-            tail = recovered.validTailOffset();
-
-            long danglingBytes = channel.size() - tail;
-            if (danglingBytes > 0) {
-                channel.truncate(tail);
-                LOG.log(
-                        Level.INFO,
-                        "truncated {0} dangling byte(s) of a torn/corrupt record in {1}",
-                        danglingBytes,
-                        path);
-            }
+            LOG.log(Level.INFO, "opened store at {0}", path);
+            return new KvibeStore(channel, lock, config, keydir, tail);
+        } catch (IOException e) {
+            releaseAndCloseSuppressingErrorsInto(e, lock, channel);
+            throw e;
         }
+    }
 
-        LOG.log(Level.INFO, "opened store at {0}", path);
-        return new KvibeStore(channel, config, keydir, tail);
+    private static FileLock lockOrClose(FileChannel channel, Path path) throws IOException {
+        try {
+            FileLock lock = channel.tryLock();
+            if (lock == null) {
+                channel.close();
+                throw new StoreAlreadyOpenException("data file is locked by another process: " + path);
+            }
+            return lock;
+        } catch (OverlappingFileLockException e) {
+            channel.close();
+            throw new StoreAlreadyOpenException("data file is already open in this process: " + path, e);
+        }
+    }
+
+    private static void releaseAndCloseSuppressingErrorsInto(IOException target, FileLock lock, FileChannel channel) {
+        try {
+            lock.release();
+        } catch (IOException suppressed) {
+            target.addSuppressed(suppressed);
+        }
+        try {
+            channel.close();
+        } catch (IOException suppressed) {
+            target.addSuppressed(suppressed);
+        }
     }
 
     @Override
     public void put(byte[] key, byte[] value) throws IOException {
-        ensureOpen();
+        ensureWritable();
         ByteBuffer record = RecordCodec.encode(System.currentTimeMillis(), false, key, value);
         int recordLength = record.remaining();
 
         long writeAt = tail;
-        writeFully(channel, record, writeAt);
-        if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
-            channel.force(false);
+        try {
+            writeFully(channel, record, writeAt);
+            if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
+                channel.force(false);
+            }
+        } catch (IOException e) {
+            poisoned = true;
+            throw e;
         }
 
         long valueOffset = writeAt + RecordCodec.valueOffsetInRecord(key.length);
@@ -126,7 +171,7 @@ public final class KvibeStore implements KeyValueStore {
 
     @Override
     public boolean delete(byte[] key) throws IOException {
-        ensureOpen();
+        ensureWritable();
         Key k = Key.of(key);
         if (!keydir.containsKey(k)) {
             return false;
@@ -136,9 +181,14 @@ public final class KvibeStore implements KeyValueStore {
         int recordLength = record.remaining();
 
         long writeAt = tail;
-        writeFully(channel, record, writeAt);
-        if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
-            channel.force(false);
+        try {
+            writeFully(channel, record, writeAt);
+            if (config.syncPolicy() == SyncPolicy.EVERY_WRITE) {
+                channel.force(false);
+            }
+        } catch (IOException e) {
+            poisoned = true;
+            throw e;
         }
 
         keydir.remove(k);
@@ -158,13 +208,30 @@ public final class KvibeStore implements KeyValueStore {
             return;
         }
         closed = true;
-        channel.close();
+        try {
+            lock.release();
+        } finally {
+            channel.close();
+        }
         LOG.log(Level.INFO, "closed store");
     }
 
     private void ensureOpen() {
         if (closed) {
             throw new IllegalStateException("store is closed");
+        }
+    }
+
+    /**
+     * Same as {@link #ensureOpen()}, plus rejects mutating calls after a write failure has left
+     * the store {@link #poisoned} (NFR-7). Reads are unaffected: the keydir only ever references
+     * writes that fully completed (5.3), so it stays consistent even after a later write fails.
+     */
+    private void ensureWritable() {
+        ensureOpen();
+        if (poisoned) {
+            throw new IllegalStateException(
+                    "store is poisoned after a write failure; close and reopen to recover (FR-3)");
         }
     }
 

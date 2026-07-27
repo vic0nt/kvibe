@@ -14,3 +14,6 @@
 - `KvibeStore`: put/get/delete в один поток, открытие/создание файла, восстановление индекса при открытии (FR-1, FR-3, FR-4, FR-6, FR-9).
 - `kvibe.recovery.Recovery`: последовательное восстановление keydir, усечение хвоста после торн-записи или порчи (FR-3, FR-5).
 - Property-тест с оракулом (jqwik, TR-2): put/get/delete/reopen сверяются с `HashMap`.
+- `FileLock` при открытии: повторное открытие занятого файла отклоняется `StoreAlreadyOpenException` вместо тихой порчи данных (FR-8).
+- Poisoned state: сбой записи отклоняет последующие `put`/`delete` через `IllegalStateException`, чтения продолжают работать (NFR-7).
+- ADR-0004 (политика долговечности по умолчанию и poisoned state).
