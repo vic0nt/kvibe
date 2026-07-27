@@ -1,0 +1,56 @@
+plugins {
+    `java-library`
+    jacoco
+    alias(libs.plugins.spotless)
+}
+
+group = "kvibe"
+version = "0.1.0-SNAPSHOT"
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.assertj.core)
+    testImplementation(libs.jqwik)
+}
+
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("slow")
+    }
+}
+
+val slowTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs crash and long-running concurrency tests tagged 'slow'."
+    useJUnitPlatform {
+        includeTags("slow")
+    }
+    shouldRunAfter(tasks.test)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+}
+
+spotless {
+    java {
+        target("src/*/java/**/*.java")
+        palantirJavaFormat(libs.versions.palantirJavaFormat.get())
+    }
+    kotlinGradle {
+        target("*.gradle.kts")
+        ktlint()
+    }
+}

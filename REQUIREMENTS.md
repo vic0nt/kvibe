@@ -96,7 +96,7 @@ public interface KeyValueStore extends AutoCloseable {
 
 ## 4. Нефункциональные требования
 
-**NFR-1. Платформа.** Java 21 (Gradle toolchain, не системный JDK). Preview-фичи не используются. Рантайм-зависимостей — ноль; всё стороннее только в `testImplementation`.
+**NFR-1. Платформа.** Java 25 (Gradle toolchain, не системный JDK). Preview-фичи не используются. Рантайм-зависимостей — ноль; всё стороннее только в `testImplementation`.
 
 **NFR-2. Модель конкурентности.** Много читателей, один писатель — подробности в разделе 5, который является нормативным.
 
@@ -120,7 +120,7 @@ public interface KeyValueStore extends AutoCloseable {
 
 **5.1 Схема.**
 - Индекс — `ConcurrentHashMap<Key, Loc>`, где `Key` — обёртка над `byte[]` с корректными `equals`/`hashCode`, `Loc` — `record(long offset, int length)`.
-- Все записи сериализуются одним `ReentrantLock`. **`synchronized` использовать ЗАПРЕЩЕНО:** в Java 21 виртуальный поток, заблокированный внутри `synchronized`, пришпиливает несущий поток платформы, и блокирующий ввод-вывод под монитором становится узким местом. `ReentrantLock` этой проблемы лишён.
+- Все записи сериализуются одним `ReentrantLock`. **`synchronized` использовать ЗАПРЕЩЕНО.** Не из-за пришпиливания: начиная с JDK 24 (JEP 491) виртуальный поток, заблокированный внутри `synchronized`, в подавляющем большинстве случаев блокировки на мониторе больше не пришпиливает несущий поток — старое обоснование этого запрета для Java 25 неверно. Причина запрета — другая: `ReentrantLock` даёт явный API (`tryLock`, `tryLock(timeout, unit)`, `isLocked`), которым можно будет диагностировать зависшего писателя и опереться на него при реализации poison state, а выделенное поле-лок делает единственную критическую секцию проекта (весь путь записи, 5.3) видимой при чтении кода вместо неявного монитора на объекте. Дополнительный довод: отсутствие пришпиливания у `synchronized` — деталь реализации конкретной версии JVM, а не гарантия JLS; корректность модели конкурентности не должна зависеть от того, зафиксировано ли это поведение спецификацией языка.
 - Чтения выполняются без блокировок позиционным `FileChannel.read(ByteBuffer, position)` — этот метод потокобезопасен и не трогает общую позицию канала.
 
 **5.2 Ключевой инвариант.**
@@ -203,10 +203,10 @@ public interface KeyValueStore extends AutoCloseable {
 ## 8. Сборка и инфраструктура
 
 - **Gradle**, Kotlin DSL, wrapper закоммичен в репозиторий. Версии библиотек — в `gradle/libs.versions.toml` (version catalog).
-- `java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }` — сборка не зависит от JDK на машине.
+- `java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }` — сборка не зависит от JDK на машине.
 - Тестовые зависимости: JUnit 5, AssertJ, jqwik.
 - Задачи: `test`, `slowTest`, `jacocoTestReport`, `javadoc`.
-- **CI** (GitHub Actions): матрица ubuntu-latest + macos-latest, Temurin 21, запуск `test` на каждый push и `slowTest` по расписанию.
+- **CI** (GitHub Actions): матрица ubuntu-latest + macos-latest, Temurin 25, запуск `test` на каждый push и `slowTest` по расписанию.
 - Форматирование: Spotless с `palantir-java-format`, проверка в CI. Ставится один раз и снимает целый класс споров с самим собой.
 - Файлы репозитория: `LICENSE` (MIT), `.gitignore`, `.editorconfig`, `CHANGELOG.md` в формате Keep a Changelog.
 
