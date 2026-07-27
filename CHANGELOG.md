@@ -11,3 +11,6 @@
 - `Key`, `Loc`, `SyncPolicy`, `StoreConfig`, интерфейс `KeyValueStore` (FR-1, FR-2).
 - Кодек формата записи (`kvibe.format`): заголовок файла и запись с CRC32C, big-endian (FR-5, FR-9, раздел 6).
 - ADR-0001 (модель Bitcask) и ADR-0002 (формат записи, CRC32C, порядок байтов).
+- `KvibeStore`: put/get/delete в один поток, открытие/создание файла, восстановление индекса при открытии (FR-1, FR-3, FR-4, FR-6, FR-9).
+- `kvibe.recovery.Recovery`: последовательное восстановление keydir, усечение хвоста после торн-записи или порчи (FR-3, FR-5).
+- Property-тест с оракулом (jqwik, TR-2): put/get/delete/reopen сверяются с `HashMap`.

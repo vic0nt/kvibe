@@ -20,6 +20,15 @@ public final class RecordCodec {
     private RecordCodec() {}
 
     /**
+     * Offset of the value's first byte relative to the start of a record whose key is {@code
+     * keyLength} bytes long. Lets callers (the write path, recovery) compute a value's absolute
+     * file offset for {@link kvibe.Loc} without re-parsing the record.
+     */
+    public static int valueOffsetInRecord(int keyLength) {
+        return FIXED_PREFIX_SIZE + keyLength;
+    }
+
+    /**
      * Encodes a record into a fresh, flipped buffer ready to be written.
      *
      * @throws IllegalArgumentException if key/value length is out of range (FR-2)
