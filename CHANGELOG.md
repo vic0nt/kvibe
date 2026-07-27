@@ -7,4 +7,7 @@
 
 ### Added
 
-- Каркас проекта: Gradle (Kotlin DSL, version catalog, wrapper), toolchain Java 21, CI (GitHub Actions, ubuntu/macos, Temurin 21), Spotless (palantir-java-format), JaCoCo.
+- Каркас проекта: Gradle (Kotlin DSL, version catalog, wrapper), toolchain Java 25, CI (GitHub Actions, ubuntu/macos, Temurin 25), Spotless (palantir-java-format), JaCoCo.
+- `Key`, `Loc`, `SyncPolicy`, `StoreConfig`, интерфейс `KeyValueStore` (FR-1, FR-2).
+- Кодек формата записи (`kvibe.format`): заголовок файла и запись с CRC32C, big-endian (FR-5, FR-9, раздел 6).
+- ADR-0001 (модель Bitcask) и ADR-0002 (формат записи, CRC32C, порядок байтов).

@@ -150,7 +150,7 @@ public interface KeyValueStore extends AutoCloseable {
 
 | Поле | Тип | Значение |
 |---|---|---|
-| magic | 4 байта | ASCII `JKV1` |
+| magic | 4 байта | ASCII `KVB1` |
 | formatVersion | uint16 | `1` |
 | flags | uint16 | зарезервировано, `0` |
 | reserved | 8 байт | нули |
