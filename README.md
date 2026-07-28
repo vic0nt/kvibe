@@ -43,6 +43,7 @@ try (KvibeStore store = KvibeStore.open(Path.of("data.kvibe"), StoreConfig.defau
 | [docs/concurrency.md](docs/concurrency.md) | Модель конкурентности, инварианты, известные ограничения |
 | [docs/testing.md](docs/testing.md) | Стратегия тестирования — что каким уровнем проверяется |
 | [docs/journal.md](docs/journal.md) | Лабораторный журнал: замеры, находки, объяснения |
+| [docs/limitations.md](docs/limitations.md) | Известные ограничения: где и во что упрётся текущее решение |
 | [docs/adr/](docs/adr/) | Архитектурные решения (MADR) |
 
 ## Стек
