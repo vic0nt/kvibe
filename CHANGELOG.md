@@ -3,7 +3,7 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 проект придерживается [SemVer](https://semver.org/) (до 1.0 обратная совместимость не гарантируется).
 
-## [Unreleased]
+## [0.1.0] - 2026-07-28
 
 ### Added
 
@@ -24,6 +24,16 @@
 - Fuzz-тест TR-4 (`kvibe.fuzz.KvibeStoreFuzzTest`): инвертирует случайный бит в случайной позиции файла 300 раз подряд и проверяет, что `open()` либо восстанавливается с усечением, либо кидает внятное `IOException`, никогда не пропуская `BufferUnderflowException`/`NegativeArraySizeException`/`OutOfMemoryError` наружу, и что записи до точки порчи остаются читаемыми.
 - `docs/arch-overview.md`: краткий (2-3 минуты чтения) обзор архитектуры кода — три пакета и их роли, разбор термина «кодек», пути данных `put`/`open`, таблица ключевых типов.
 - TR-6: задача `jacocoTestCoverageVerification` с порогом 80% строк отдельно для `kvibe.format` и `kvibe.recovery` (фактически 98.8% и 96.2% на момент внедрения), подключена к `check`.
+- `docs/format.md`, `docs/concurrency.md`, `docs/testing.md`, `docs/journal.md` (раздел 9 REQUIREMENTS.md) — спецификация формата, модель конкурентности и её ограничения, карта тестовой стратегии по всем пяти уровням TR-1, лабораторный журнал с baseline-замером производительности (NFR-5: ≈19 100 put/с на `NEVER`, ≈120 put/с на `EVERY_WRITE`, ≈650 000 get/с независимо от политики — Apple M1 Pro, APFS, Temurin 25).
+- Задача `concurrencyTestExtended`: прогоняет тест конкурентности TR-5 10 минут вместо 10 секунд (DoD, раздел 10), локально, аналогично `crashTestExtended`.
+- Javadoc публичного API (`kvibe`: `KeyValueStore`, `KvibeStore`, `Key`, `Loc`, `StoreConfig`, `StoreAlreadyOpenException`) дополнен до нулевых предупреждений `javadoc` — `@param`/`@return`/`@throws` на всех публичных методах и конструкторах, включая описание гарантий потокобезопасности (в `KeyValueStore`/`KvibeStore`, ссылается на `docs/concurrency.md`).
+- `README.md` переписан: снят устаревший статус «Этап 0, код не написан», добавлены пример использования, таблица документации, актуальные команды сборки.
+
+### Changed
+
+- Property-тест TR-2 (`KvibeStorePropertyTest`) поднят с 500 до 1000 попыток (DoD, раздел 10).
+- TR-8 (REQUIREMENTS.md, раздел 7): потолок быстрого набора `test` поднят с 60 до 120 секунд — рост property-теста до 1000 попыток увеличил быстрый набор до ≈47с, запас в 13с сочли недостаточным для более медленных CI-раннеров.
+- TR-5 (REQUIREMENTS.md, раздел 7): явно зафиксирован сплит «10 секунд в `slowTest`/CI, 10 минут — `concurrencyTestExtended` локально для DoD», устраняющий скрытое противоречие между TR-5 (10 секунд) и Definition of Done (10 минут).
 
 ### Fixed
 

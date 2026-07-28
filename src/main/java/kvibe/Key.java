@@ -22,6 +22,8 @@ public final class Key {
     /**
      * Creates a {@code Key} from a defensive copy of {@code key}.
      *
+     * @param key the raw key bytes, copied on entry
+     * @return a new {@code Key} wrapping a copy of {@code key}
      * @throws NullPointerException if {@code key} is {@code null}
      * @throws IllegalArgumentException if {@code key.length} is outside {@code [1, 65535]} (FR-2)
      */
@@ -34,11 +36,20 @@ public final class Key {
         return new Key(key.clone());
     }
 
-    /** Returns a defensive copy of this key's bytes. */
+    /**
+     * Returns a defensive copy of this key's bytes.
+     *
+     * @return a copy of the underlying byte array
+     */
     public byte[] toByteArray() {
         return bytes.clone();
     }
 
+    /**
+     * Returns the number of bytes in this key.
+     *
+     * @return the key length in bytes
+     */
     public int length() {
         return bytes.length;
     }

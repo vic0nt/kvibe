@@ -29,13 +29,19 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>No seed is captured/printed here (unlike TR-7 elsewhere): failures in this test come from
  * virtual-thread scheduling nondeterminism, not from {@link ThreadLocalRandom}'s sequence — fixing
  * the seed would not make a failure reproducible.
+ *
+ * <p>Runs for {@value #DEFAULT_RUN_SECONDS} seconds in {@code slowTest}, satisfying TR-5's
+ * "at least 10 seconds". The Gradle task {@code concurrencyTestExtended} overrides the duration to
+ * 10 minutes to satisfy the stricter Definition of Done (section 10) — local only, not part of CI.
  */
 @Tag("slow")
 class KvibeStoreConcurrencyTest {
 
+    private static final int DEFAULT_RUN_SECONDS = 10;
     private static final int WRITERS = 4;
     private static final int READERS = 8;
-    private static final Duration RUN_TIME = Duration.ofSeconds(10);
+    private static final Duration RUN_TIME =
+            Duration.ofSeconds(Integer.getInteger("kvibe.concurrencyTest.seconds", DEFAULT_RUN_SECONDS));
 
     @TempDir
     Path dir;

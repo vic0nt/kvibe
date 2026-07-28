@@ -34,7 +34,7 @@ class KvibeStorePropertyTest {
 
     private record Reopen() implements Op {}
 
-    @Property(tries = 500)
+    @Property(tries = 1000)
     void behavesLikeAHashMapOracle(@ForAll("ops") List<Op> ops) throws IOException {
         // No @TempDir here (unlike other tests, TR-7): jqwik runs as its own JUnit Platform engine
         // and only resolves @ForAll parameters, so Jupiter's @TempDir extension never fires.

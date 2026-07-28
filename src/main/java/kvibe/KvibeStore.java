@@ -60,10 +60,15 @@ public final class KvibeStore implements KeyValueStore {
      * Opens {@code path}, creating it (with a fresh header) if it doesn't exist, or replaying it
      * to rebuild the keydir otherwise (FR-3).
      *
+     * @param path the data file path
+     * @param config store configuration, notably the durability {@link SyncPolicy} (FR-7)
+     * @return an open store, ready for {@code put}/{@code get}/{@code delete}
      * @throws StoreAlreadyOpenException if the file is already locked by another open {@code
      *     KvibeStore}, in this process or another (FR-8)
      * @throws kvibe.format.UnsupportedFormatException if the file's magic or format version is
      *     not recognized (FR-9)
+     * @throws IOException if the file can't be created/read, or a record fails to decode in a way
+     *     recovery can't safely truncate past (FR-3, FR-5)
      */
     public static KvibeStore open(Path path, StoreConfig config) throws IOException {
         Objects.requireNonNull(path, "path");

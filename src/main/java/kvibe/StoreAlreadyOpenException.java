@@ -8,10 +8,21 @@ import java.io.IOException;
  */
 public class StoreAlreadyOpenException extends IOException {
 
+    /**
+     * Creates the exception with a message and no cause.
+     *
+     * @param message description of which file was already open and how
+     */
     public StoreAlreadyOpenException(String message) {
         super(message);
     }
 
+    /**
+     * Creates the exception with a message and an underlying cause.
+     *
+     * @param message description of which file was already open and how
+     * @param cause the underlying exception (e.g. {@link java.nio.channels.OverlappingFileLockException})
+     */
     public StoreAlreadyOpenException(String message, Throwable cause) {
         super(message, cause);
     }

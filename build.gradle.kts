@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "kvibe"
-version = "0.1.0-SNAPSHOT"
+version = "0.1.0"
 
 java {
     toolchain {
@@ -55,6 +55,22 @@ val crashTestExtended by tasks.registering(Test::class) {
         includeTestsMatching("kvibe.crash.KvibeStoreCrashTest")
     }
     systemProperty("kvibe.crashTest.iterations", "500")
+    shouldRunAfter(tasks.test)
+}
+
+val concurrencyTestExtended by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the TR-5 concurrency test for 10 minutes (Definition of Done, section 10). " +
+        "Local only, not part of CI: too slow to run on every push."
+    testClassesDirs = tasks.test.get().testClassesDirs
+    classpath = tasks.test.get().classpath
+    useJUnitPlatform {
+        includeTags("slow")
+    }
+    filter {
+        includeTestsMatching("kvibe.KvibeStoreConcurrencyTest")
+    }
+    systemProperty("kvibe.concurrencyTest.seconds", "600")
     shouldRunAfter(tasks.test)
 }
 
