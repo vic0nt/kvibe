@@ -36,6 +36,9 @@ class KvibeStorePropertyTest {
 
     @Property(tries = 500)
     void behavesLikeAHashMapOracle(@ForAll("ops") List<Op> ops) throws IOException {
+        // No @TempDir here (unlike other tests, TR-7): jqwik runs as its own JUnit Platform engine
+        // and only resolves @ForAll parameters, so Jupiter's @TempDir extension never fires.
+        // jqwik prints its own seed on failure (and supports @Property(seed = "...") to replay it).
         Path dir = Files.createTempDirectory("kvibe-prop");
         Path file = dir.resolve("store.kvibe");
         Map<Key, byte[]> oracle = new HashMap<>();

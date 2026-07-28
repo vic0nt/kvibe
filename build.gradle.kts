@@ -62,6 +62,24 @@ tasks.jacocoTestReport {
     dependsOn(tasks.test)
 }
 
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    violationRules {
+        rule {
+            element = "PACKAGE"
+            includes = listOf("kvibe.format", "kvibe.recovery")
+            limit {
+                counter = "LINE"
+                minimum = "0.80".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(tasks.jacocoTestCoverageVerification)
+}
+
 spotless {
     java {
         target("src/*/java/**/*.java")

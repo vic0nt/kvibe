@@ -20,7 +20,7 @@ jobs:
           distribution: temurin
           java-version: 25
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew test
+      - run: ./gradlew check
 
   slow-test:
     if: github.event_name == 'schedule'

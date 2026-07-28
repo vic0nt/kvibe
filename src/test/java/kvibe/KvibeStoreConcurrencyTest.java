@@ -25,6 +25,10 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * TR-5: a pool of virtual threads, several writers and several readers, hammering one store for
  * at least 10 seconds. Slow by design (TR-8) — belongs to {@code slowTest}, not {@code test}.
+ *
+ * <p>No seed is captured/printed here (unlike TR-7 elsewhere): failures in this test come from
+ * virtual-thread scheduling nondeterminism, not from {@link ThreadLocalRandom}'s sequence — fixing
+ * the seed would not make a failure reproducible.
  */
 @Tag("slow")
 class KvibeStoreConcurrencyTest {

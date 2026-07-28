@@ -23,7 +23,9 @@
 - Краш-тест TR-3 (`@Tag("slow")`): дочерняя JVM (`CrashWriterMain`) непрерывно пишет новые ключи, подтверждая каждую запись в stdout; родитель убивает её `Process.destroyForcibly()` в случайный момент (случайная политика `SyncPolicy`, случайная задержка) и проверяет, что все подтверждённые записи переживают крэш без потери и без порчи. 20 итераций в `slowTest` (CI), задача `crashTestExtended` — 500 итераций локально (DoD, раздел 10).
 - Fuzz-тест TR-4 (`kvibe.fuzz.KvibeStoreFuzzTest`): инвертирует случайный бит в случайной позиции файла 300 раз подряд и проверяет, что `open()` либо восстанавливается с усечением, либо кидает внятное `IOException`, никогда не пропуская `BufferUnderflowException`/`NegativeArraySizeException`/`OutOfMemoryError` наружу, и что записи до точки порчи остаются читаемыми.
 - `docs/arch-overview.md`: краткий (2-3 минуты чтения) обзор архитектуры кода — три пакета и их роли, разбор термина «кодек», пути данных `put`/`open`, таблица ключевых типов.
+- TR-6: задача `jacocoTestCoverageVerification` с порогом 80% строк отдельно для `kvibe.format` и `kvibe.recovery` (фактически 98.8% и 96.2% на момент внедрения), подключена к `check`.
 
 ### Fixed
 
+- CI: джоб `test` теперь запускает `./gradlew check` вместо `./gradlew test` — до этого `spotlessCheck` (заявленный в разделе 9 REQUIREMENTS.md) и новый порог JaCoCo (TR-6) не проверялись в CI вовсе, только локально.
 - Задача `slowTest` в `build.gradle.kts` не наследовала `testClassesDirs`/`classpath` от `test` и была `NO-SOURCE` с Этапа 0 — просто никто не замечал, пока не появился первый тест с тегом `slow`.
