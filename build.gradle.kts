@@ -42,6 +42,22 @@ val slowTest by tasks.registering(Test::class) {
     shouldRunAfter(tasks.test)
 }
 
+val crashTestExtended by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Runs the TR-3 crash test with 500+ iterations (Definition of Done, section 10). " +
+        "Local only, not part of CI: too slow to run on every push."
+    testClassesDirs = tasks.test.get().testClassesDirs
+    classpath = tasks.test.get().classpath
+    useJUnitPlatform {
+        includeTags("slow")
+    }
+    filter {
+        includeTestsMatching("kvibe.crash.KvibeStoreCrashTest")
+    }
+    systemProperty("kvibe.crashTest.iterations", "500")
+    shouldRunAfter(tasks.test)
+}
+
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
 }
